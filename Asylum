@@ -159,7 +159,7 @@ getgenv().FarmThread = task.spawn(function()
                         local distXZ = (Vector2.new(currentPos.X, currentPos.Z) - Vector2.new(target.X, target.Z)).Magnitude
                         
                         equipPatientTool()
-                        if distXZ <= 0.05 then break end -- Đã tới nơi (sai số cực nhỏ)
+                        if distXZ <= 0.25 then break end -- Đã tăng lên 0.25 để mượt hơn
                         if tick() - startTime > 10 then break end -- Chống kẹt
                         task.wait(0.1)
                     end
