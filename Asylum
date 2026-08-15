@@ -1,19 +1,18 @@
--- Dọn dẹp triệt để thread và GUI cũ
-if getgenv().FarmThread then
-    task.cancel(getgenv().FarmThread)
-end
-local existingGui = game:GetService("CoreGui"):FindFirstChild("FarmScriptGUI")
-if existingGui then
-    existingGui:Destroy()
-end
-
 -- Services
 local Players = game:GetService("Players")
 local CoreGui = game:GetService("CoreGui")
 local UserInputService = game:GetService("UserInputService")
 local player = Players.LocalPlayer
 
--- Tạo GUI (Thu nhỏ, kéo thả được)
+-- Dọn dẹp triệt để thread và GUI cũ
+if getgenv().FarmThread then
+    task.cancel(getgenv().FarmThread)
+end
+if CoreGui:FindFirstChild("FarmScriptGUI") then
+    CoreGui.FarmScriptGUI:Destroy()
+end
+
+-- Tạo GUI (Thu nhỏ và kéo thả được)
 local ScreenGui = Instance.new("ScreenGui")
 ScreenGui.Name = "FarmScriptGUI"
 ScreenGui.Parent = CoreGui
@@ -114,12 +113,51 @@ local farmRunning = false
 local function equipPatientTool()
     local char = player.Character
     if not char then return end
-    local backpack = player:FindFirstChild("Backpack")
-    if backpack then
-        for _, tool in ipairs(backpack:GetChildren()) do
-            if tool:IsA("Tool") and string.find(string.lower(tool.Name), "patient") then
-                char.Humanoid:EquipTool(tool)
-                pcall(function() tool:Activate() end)
+    local equippedTool = nil
+    for _, child in ipairs(char:GetChildren()) do
+        if child:IsA("Tool") and string.find(string.lower(child.Name), "patient") then
+            equippedTool = child
+            break
+        end
+    end
+    if not equippedTool then
+        local backpack = player:FindFirstChild("Backpack")
+        if backpack then
+            for _, tool in ipairs(backpack:GetChildren()) do
+                if tool:IsA("Tool") and string.find(string.lower(tool.Name), "patient") then
+                    if char:FindFirstChild("Humanoid") then
+                        char.Humanoid:EquipTool(tool)
+                        equippedTool = tool
+                        break
+                    end
+                end
+            end
+        end
+    end
+    if equippedTool then pcall(function() equippedTool:Activate() end) end
+end
+
+local function setupInstantPrompt()
+    for _, v in ipairs(workspace:GetDescendants()) do
+        if v:IsA("ProximityPrompt") then v.HoldDuration = 0 end
+    end
+end
+
+workspace.DescendantAdded:Connect(function(v)
+    if v:IsA("ProximityPrompt") then v.HoldDuration = 0 end
+end)
+
+local function triggerInteract(customRadius)
+    local char = player.Character
+    if not char or not char:FindFirstChild("HumanoidRootPart") then return end
+    local rootPos = char.HumanoidRootPart.Position
+    local radius = customRadius or 5
+    for _, v in ipairs(workspace:GetDescendants()) do
+        if v:IsA("ProximityPrompt") then
+            local parentPart = v.Parent
+            local promptPos = (parentPart:IsA("BasePart") and parentPart.Position) or (parentPart:IsA("Model") and parentPart.PrimaryPart and parentPart.PrimaryPart.Position)
+            if promptPos and (promptPos - rootPos).Magnitude <= radius then
+                pcall(function() fireproximityprompt(v) end)
             end
         end
     end
@@ -131,51 +169,31 @@ getgenv().FarmThread = task.spawn(function()
         task.wait(0.5)
         if farmRunning then
             local char = player.Character
-            if char and char:FindFirstChild("HumanoidRootPart") then
-                -- Setup Instant
-                for _, v in ipairs(workspace:GetDescendants()) do if v:IsA("ProximityPrompt") then v.HoldDuration = 0 end end
-                
+            if char and char:FindFirstChild("Humanoid") and char:FindFirstChild("HumanoidRootPart") then
+                setupInstantPrompt()
                 local rootPart = char.HumanoidRootPart
-                -- Tìm waypoint gần nhất
                 local minDistance = math.huge
-                local i = 1
-                for idx, pos in ipairs(waypoints) do
-                    local dist = (Vector2.new(pos.X, pos.Z) - Vector2.new(rootPart.Position.X, rootPart.Position.Z)).Magnitude
-                    if dist < minDistance then minDistance = dist; i = idx end
+                local startIndex = 1
+                for i, pos in ipairs(waypoints) do
+                    local dist = (pos - rootPart.Position).Magnitude
+                    if dist < minDistance then minDistance = dist; startIndex = i end
                 end
-                
-                -- Farm
-                while farmRunning and i <= #waypoints and player.Character == char do
+                local i = startIndex
+                while i <= #waypoints and farmRunning and player.Character == char do
                     StatusLabel.Text = "Đang đi: " .. i .. "/" .. #waypoints
+                    equipPatientTool()
                     local target = waypoints[i]
-                    
-                    -- DI CHUYỂN BỎ QUA Y: Chỉ dùng X, Z của target và Y hiện tại
-                    char.Humanoid:MoveTo(Vector3.new(target.X, rootPart.Position.Y, target.Z))
-                    
+                    char.Humanoid:MoveTo(target)
                     local startTime = tick()
-                    while farmRunning and player.Character == char do
-                        local currentPos = rootPart.Position
-                        -- Check khoảng cách 2D (XZ)
-                        local distXZ = (Vector2.new(currentPos.X, currentPos.Z) - Vector2.new(target.X, target.Z)).Magnitude
-                        
+                    while farmRunning and player.Character == char and (rootPart.Position - Vector3.new(target.X, rootPart.Position.Y, target.Z)).Magnitude > 0.25 do
                         equipPatientTool()
-                        if distXZ <= 0.25 then break end -- Đã tăng lên 0.25 để mượt hơn
-                        if tick() - startTime > 10 then break end -- Chống kẹt
-                        task.wait(0.1)
+                        if tick() - startTime > 10 then break end
+                        task.wait(0.2)
                     end
-                    
-                    -- Interact
-                    for _, v in ipairs(workspace:GetDescendants()) do
-                        if v:IsA("ProximityPrompt") then
-                            local pos = (v.Parent:IsA("BasePart") and v.Parent.Position) or (v.Parent:IsA("Model") and v.Parent.PrimaryPart and v.Parent.PrimaryPart.Position)
-                            if pos and (Vector2.new(pos.X, pos.Z) - Vector2.new(rootPart.Position.X, rootPart.Position.Z)).Magnitude <= 7 then 
-                                pcall(function() fireproximityprompt(v) end) 
-                            end
-                        end
-                    end
-                    
+                    triggerInteract(5)
+                    task.wait(0.1)
                     i = i + 1
-                    if i > #waypoints then i = 1 end
+                    if i > #waypoints then i = 1 end -- Tự quay lại đầu
                 end
             end
         end
@@ -186,5 +204,7 @@ ToggleButton.MouseButton1Click:Connect(function()
     farmRunning = not farmRunning
     ToggleButton.Text = farmRunning and "Tắt Farm" or "Bật Farm"
     ToggleButton.BackgroundColor3 = farmRunning and Color3.fromRGB(50, 200, 50) or Color3.fromRGB(200, 50, 50)
-    if not farmRunning then StatusLabel.Text = "Trạng thái: Đang tắt" end
+    if not farmRunning then
+        StatusLabel.Text = "Trạng thái: Đang tắt"
+    end
 end)
