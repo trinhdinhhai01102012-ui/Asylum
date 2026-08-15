@@ -85,7 +85,7 @@ UserInputService.InputEnded:Connect(function(input)
     end
 end)
 
--- Danh sách waypoint của bạn
+-- Danh sách waypoint gốc chính xác 100%
 local waypoints = {
     Vector3.new(101.6, 249.5, -550.8), Vector3.new(101.6, 249.5, -464.4), Vector3.new(85.1, 249.5, -451.3),
     Vector3.new(63.8, 251.6, -423.8), Vector3.new(72.4, 249.6, -426.2), Vector3.new(57.7, 251.5, -411.5),
@@ -137,7 +137,7 @@ getgenv().FarmThread = task.spawn(function()
                     char.Humanoid:MoveTo(target)
                     local startTime = tick()
                     
-                    -- Chờ đến khi thực sự đến gần điểm (hoặc tối đa 15 giây để tránh kẹt hẳn)
+                    -- Chờ đến khi thực sự đến gần điểm (khoảng cách <= 3)
                     while farmRunning and player.Character == char do
                         local currentPos = rootPart.Position
                         local distXZ = (Vector2.new(currentPos.X, currentPos.Z) - Vector2.new(target.X, target.Z)).Magnitude
