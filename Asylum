@@ -24,6 +24,7 @@ MainFrame.Size = UDim2.new(0, 180, 0, 105)
 MainFrame.Position = UDim2.new(0.5, -90, 0.1, 0)
 MainFrame.BackgroundColor3 = Color3.fromRGB(35, 35, 35)
 MainFrame.BorderSizePixel = 0
+MainFrame.Active = true -- BẮT BUỘC: Cho phép kéo thả
 MainFrame.Parent = ScreenGui
 
 local UICorner = Instance.new("UICorner")
@@ -134,10 +135,16 @@ getgenv().FarmThread = task.spawn(function()
                 while farmRunning and i <= #waypoints do
                     StatusLabel.Text = "Đang đi: " .. i .. "/" .. #waypoints
                     local target = waypoints[i]
-                    char.Humanoid:MoveTo(target)
+                    
+                    -- Tính toán điểm đi lố qua (2 stud)
+                    local prev = (i > 1) and waypoints[i-1] or target
+                    local dir = (target - prev).Magnitude > 0 and (target - prev).Unit or Vector3.new(0,0,0)
+                    local targetPoint = target + (dir * 2) 
+                    
+                    char.Humanoid:MoveTo(targetPoint)
                     local startMove = tick()
                     
-                    -- Chờ di chuyển
+                    -- Chờ di chuyển (vẫn check khoảng cách với waypoint gốc)
                     while farmRunning and (rootPart.Position - Vector3.new(target.X, rootPart.Position.Y, target.Z)).Magnitude > 3 do
                         -- Equip Tool
                         local backpack = player:FindFirstChild("Backpack")
