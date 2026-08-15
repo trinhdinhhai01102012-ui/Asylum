@@ -1,9 +1,11 @@
--- Dọn dẹp script cũ nếu đang chạy
-if getgenv().FarmScriptConnection then
-    getgenv().FarmScriptConnection = false -- Dừng vòng lặp cũ
+-- Dọn dẹp triệt để: Dừng thread cũ và xóa GUI cũ
+if getgenv().FarmThread then
+    task.cancel(getgenv().FarmThread)
 end
-if game:GetService("CoreGui"):FindFirstChild("FarmScriptGUI") then
-    game:GetService("CoreGui").FarmScriptGUI:Destroy()
+
+local existingGui = game:GetService("CoreGui"):FindFirstChild("FarmScriptGUI")
+if existingGui then
+    existingGui:Destroy()
 end
 
 -- Services
@@ -12,11 +14,7 @@ local CoreGui = game:GetService("CoreGui")
 local UserInputService = game:GetService("UserInputService")
 local player = Players.LocalPlayer
 
--- Khởi tạo biến điều khiển
-getgenv().FarmScriptConnection = true
-local farmRunning = false
-
--- Tạo GUI (Thu nhỏ và hỗ trợ kéo thả)
+-- Tạo GUI mới
 local ScreenGui = Instance.new("ScreenGui")
 ScreenGui.Name = "FarmScriptGUI"
 ScreenGui.Parent = CoreGui
@@ -65,7 +63,7 @@ local ToggleCorner = Instance.new("UICorner")
 ToggleCorner.CornerRadius = UDim.new(0, 6)
 ToggleCorner.Parent = ToggleButton
 
--- Logic kéo thả
+-- Logic Kéo thả
 local dragging, dragStart, startPos
 MainFrame.InputBegan:Connect(function(input)
     if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
@@ -111,29 +109,16 @@ local waypoints = {
     Vector3.new(-2.9, 517.5, 450.0),   Vector3.new(-3.0, 517.5, 477.7)
 }
 
--- Hàm phụ trợ
-local function equipTool()
-    local char = player.Character
-    if not char then return end
-    local backpack = player:FindFirstChild("Backpack")
-    if backpack then
-        for _, tool in ipairs(backpack:GetChildren()) do
-            if tool:IsA("Tool") and string.find(string.lower(tool.Name), "patient") then
-                char.Humanoid:EquipTool(tool)
-                pcall(function() tool:Activate() end)
-            end
-        end
-    end
-end
+local farmRunning = false
 
--- Vòng lặp Farm
-task.spawn(function()
-    while getgenv().FarmScriptConnection do
+-- Vòng lặp chính
+getgenv().FarmThread = task.spawn(function()
+    while true do
         task.wait(0.5)
         if farmRunning then
             local char = player.Character
             if char and char:FindFirstChild("HumanoidRootPart") then
-                -- Setup Instant
+                -- Setup Prompt
                 for _, v in ipairs(workspace:GetDescendants()) do if v:IsA("ProximityPrompt") then v.HoldDuration = 0 end end
                 
                 -- Tìm điểm gần nhất
@@ -145,18 +130,30 @@ task.spawn(function()
                     if dist < minDistance then minDistance = dist; i = idx end
                 end
                 
-                -- Đi tuần
+                -- Thực hiện Farm
                 while farmRunning and i <= #waypoints do
-                    StatusLabel.Text = "Đang đến điểm: " .. i .. "/" .. #waypoints
+                    StatusLabel.Text = "Đang đi: " .. i .. "/" .. #waypoints
                     local target = waypoints[i]
                     char.Humanoid:MoveTo(target)
-                    local startTime = tick()
+                    local startMove = tick()
+                    
+                    -- Chờ di chuyển
                     while farmRunning and (rootPart.Position - Vector3.new(target.X, rootPart.Position.Y, target.Z)).Magnitude > 3 do
-                        equipTool()
-                        if tick() - startTime > 10 then break end
+                        -- Equip Tool
+                        local backpack = player:FindFirstChild("Backpack")
+                        if backpack then
+                            for _, tool in ipairs(backpack:GetChildren()) do
+                                if tool:IsA("Tool") and string.find(string.lower(tool.Name), "patient") then
+                                    char.Humanoid:EquipTool(tool)
+                                    pcall(function() tool:Activate() end)
+                                end
+                            end
+                        end
+                        if tick() - startMove > 10 then break end
                         task.wait(0.2)
                     end
-                    -- Interact
+                    
+                    -- Click Prompt
                     for _, v in ipairs(workspace:GetDescendants()) do
                         if v:IsA("ProximityPrompt") then
                             local pos = (v.Parent:IsA("BasePart") and v.Parent.Position) or (v.Parent:IsA("Model") and v.Parent.PrimaryPart and v.Parent.PrimaryPart.Position)
