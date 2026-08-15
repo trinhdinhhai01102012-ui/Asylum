@@ -1,0 +1,181 @@
+-- Services
+local Players = game:GetService("Players")
+local CoreGui = game:GetService("CoreGui")
+local PathfindingService = game:GetService("PathfindingService")
+local player = Players.LocalPlayer
+
+-- Xóa GUI cũ nếu có
+if CoreGui:FindFirstChild("FarmScriptGUI") then
+    CoreGui.FarmScriptGUI:Destroy()
+end
+
+-- Tạo GUI
+local ScreenGui = Instance.new("ScreenGui")
+ScreenGui.Name = "FarmScriptGUI"
+ScreenGui.Parent = CoreGui
+
+local MainFrame = Instance.new("Frame")
+MainFrame.Size = UDim2.new(0, 220, 0, 130)
+MainFrame.Position = UDim2.new(0.5, -110, 0.1, 0)
+MainFrame.BackgroundColor3 = Color3.fromRGB(35, 35, 35)
+MainFrame.BorderSizePixel = 0
+MainFrame.Parent = ScreenGui
+
+local UICorner = Instance.new("UICorner")
+UICorner.CornerRadius = UDim.new(0, 8)
+UICorner.Parent = MainFrame
+
+local Title = Instance.new("TextLabel")
+Title.Size = UDim2.new(1, 0, 0, 30)
+Title.BackgroundTransparency = 1
+Title.TextColor3 = Color3.fromRGB(255, 255, 255)
+Title.TextSize = 16
+Title.Font = Enum.Font.SourceSansBold
+Title.Text = "Auto Farm Controller"
+Title.Parent = MainFrame
+
+local StatusLabel = Instance.new("TextLabel")
+StatusLabel.Size = UDim2.new(1, 0, 0, 25)
+StatusLabel.Position = UDim2.new(0, 0, 0, 35)
+StatusLabel.BackgroundTransparency = 1
+StatusLabel.TextColor3 = Color3.fromRGB(200, 200, 200)
+StatusLabel.TextSize = 14
+StatusLabel.Font = Enum.Font.SourceSans
+StatusLabel.Text = "Trạng thái: Đang tắt"
+StatusLabel.Parent = MainFrame
+
+local ToggleButton = Instance.new("TextButton")
+ToggleButton.Size = UDim2.new(0.9, 0, 0, 35)
+ToggleButton.Position = UDim2.new(0.05, 0, 0, 75)
+ToggleButton.BackgroundColor3 = Color3.fromRGB(200, 50, 50)
+ToggleButton.TextColor3 = Color3.fromRGB(255, 255, 255)
+ToggleButton.TextSize = 15
+ToggleButton.Font = Enum.Font.SourceSansBold
+ToggleButton.Text = "Bật Farm"
+ToggleButton.Parent = MainFrame
+
+local ToggleCorner = Instance.new("UICorner")
+ToggleCorner.CornerRadius = UDim.new(0, 6)
+ToggleCorner.Parent = ToggleButton
+
+-- Danh sách waypoint
+local waypoints = {
+    Vector3.new(101.6, 249.5, -550.8), Vector3.new(101.6, 249.5, -464.4), Vector3.new(85.1, 249.5, -451.3),
+    Vector3.new(63.8, 251.6, -423.8), Vector3.new(72.4, 249.6, -426.2), Vector3.new(57.7, 251.5, -411.5),
+    Vector3.new(57.0, 251.5, -399.4), Vector3.new(158.1, 269.5, -399.1), Vector3.new(158.3, 269.5, -412.9),
+    Vector3.new(43.1, 287.5, -420.8), Vector3.new(-16.4, 287.7, -416.8), Vector3.new(-16.2, 287.5, -423.7),
+    Vector3.new(-74.0, 287.7, -407.6), Vector3.new(-67.4, 287.5, -429.1), Vector3.new(-85.4, 298.0, -377.2),
+    Vector3.new(-71.6, 298.0, -376.3), Vector3.new(-72.2, 318.0, -401.7), Vector3.new(-81.9, 318.0, -401.6),
+    Vector3.new(-82.1, 338.0, -376.0), Vector3.new(-72.6, 338.0, -375.3), Vector3.new(-72.8, 358.0, -401.3),
+    Vector3.new(-81.9, 358.0, -401.0), Vector3.new(-81.8, 378.0, -375.7), Vector3.new(-72.8, 378.0, -375.8),
+    Vector3.new(-72.6, 398.0, -401.2), Vector3.new(-81.4, 398.0, -401.1), Vector3.new(-80.7, 418.0, -375.4),
+    Vector3.new(-72.7, 418.0, -376.2), Vector3.new(-72.7, 438.0, -401.6), Vector3.new(-81.6, 438.0, -400.2),
+    Vector3.new(-81.0, 458.0, -376.2), Vector3.new(-72.6, 458.0, -376.6), Vector3.new(-73.3, 478.0, -400.8),
+    Vector3.new(-81.3, 478.0, -400.5), Vector3.new(-81.2, 498.0, -376.0), Vector3.new(-72.1, 498.0, -376.2),
+    Vector3.new(-74.1, 518.0, -400.5), Vector3.new(-82.2, 518.0, -400.5), Vector3.new(-80.9, 518.0, -366.4),
+    Vector3.new(-7.3, 518.0, -302.9),  Vector3.new(15.4, 518.0, -201.7),  Vector3.new(32.9, 518.2, -200.8),
+    Vector3.new(25.2, 518.0, -203.2),  Vector3.new(37.4, 518.0, -190.4),  Vector3.new(35.1, 518.2, -179.3),
+    Vector3.new(42.3, 518.0, -179.3),  Vector3.new(15.5, 518.0, -168.3),  Vector3.new(0.3, 518.0, -113.6),
+    Vector3.new(-0.2, 518.0, -126.4),  Vector3.new(-2.7, 518.0, -49.9),   Vector3.new(-2.8, 518.0, 50.0),
+    Vector3.new(-2.8, 518.0, 150.0),   Vector3.new(-2.8, 518.0, 250.0),   Vector3.new(-2.8, 518.0, 350.0),
+    Vector3.new(-2.9, 517.5, 450.0),   Vector3.new(-3.0, 517.5, 477.7)
+}
+
+local farmRunning = false
+
+-- Hàm hỗ trợ
+local function equipPatientTool()
+    local char = player.Character
+    if not char then return end
+    local equippedTool = nil
+    for _, child in ipairs(char:GetChildren()) do
+        if child:IsA("Tool") and string.find(string.lower(child.Name), "patient") then
+            equippedTool = child
+            break
+        end
+    end
+    if not equippedTool then
+        local backpack = player:FindFirstChild("Backpack")
+        if backpack then
+            for _, tool in ipairs(backpack:GetChildren()) do
+                if tool:IsA("Tool") and string.find(string.lower(tool.Name), "patient") then
+                    if char:FindFirstChild("Humanoid") then
+                        char.Humanoid:EquipTool(tool)
+                        equippedTool = tool
+                        break
+                    end
+                end
+            end
+        end
+    end
+    if equippedTool then pcall(function() equippedTool:Activate() end) end
+end
+
+local function setupInstantPrompt()
+    for _, v in ipairs(workspace:GetDescendants()) do
+        if v:IsA("ProximityPrompt") then v.HoldDuration = 0 end
+    end
+end
+
+workspace.DescendantAdded:Connect(function(v)
+    if v:IsA("ProximityPrompt") then v.HoldDuration = 0 end
+end)
+
+local function triggerInteract(customRadius)
+    local char = player.Character
+    if not char or not char:FindFirstChild("HumanoidRootPart") then return end
+    local rootPos = char.HumanoidRootPart.Position
+    local radius = customRadius or 5
+    for _, v in ipairs(workspace:GetDescendants()) do
+        if v:IsA("ProximityPrompt") then
+            local parentPart = v.Parent
+            local promptPos = (parentPart:IsA("BasePart") and parentPart.Position) or (parentPart:IsA("Model") and parentPart.PrimaryPart and parentPart.PrimaryPart.Position)
+            if promptPos and (promptPos - rootPos).Magnitude <= radius then
+                pcall(function() fireproximityprompt(v) end)
+            end
+        end
+    end
+end
+
+-- Vòng lặp chính
+task.spawn(function()
+    while true do
+        task.wait(0.5)
+        if farmRunning then
+            local char = player.Character
+            if char and char:FindFirstChild("Humanoid") and char:FindFirstChild("HumanoidRootPart") then
+                setupInstantPrompt()
+                local rootPart = char.HumanoidRootPart
+                local minDistance = math.huge
+                local startIndex = 1
+                for i, pos in ipairs(waypoints) do
+                    local dist = (pos - rootPart.Position).Magnitude
+                    if dist < minDistance then minDistance = dist; startIndex = i end
+                end
+                local i = startIndex
+                while i <= #waypoints and farmRunning and player.Character == char do
+                    equipPatientTool()
+                    local target = waypoints[i]
+                    char.Humanoid:MoveTo(target)
+                    local startTime = tick()
+                    while farmRunning and player.Character == char and (rootPart.Position - Vector3.new(target.X, rootPart.Position.Y, target.Z)).Magnitude > 3 do
+                        equipPatientTool()
+                        if tick() - startTime > 10 then break end
+                        task.wait(0.2)
+                    end
+                    triggerInteract(5)
+                    task.wait(0.1)
+                    i = i + 1
+                    if i > #waypoints then i = 1 end -- Tự quay lại đầu
+                end
+            end
+        end
+    end
+end)
+
+ToggleButton.MouseButton1Click:Connect(function()
+    farmRunning = not farmRunning
+    ToggleButton.Text = farmRunning and "Tắt Farm" or "Bật Farm"
+    ToggleButton.BackgroundColor3 = farmRunning and Color3.fromRGB(50, 200, 50) or Color3.fromRGB(200, 50, 50)
+    StatusLabel.Text = farmRunning and "Trạng thái: Đang chạy" or "Trạng thái: Đang tắt"
+end)
