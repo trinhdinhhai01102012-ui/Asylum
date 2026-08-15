@@ -8,7 +8,7 @@ local player = Players.LocalPlayer
 if getgenv().FarmThread then task.cancel(getgenv().FarmThread) end
 if CoreGui:FindFirstChild("FarmScriptGUI") then CoreGui.FarmScriptGUI:Destroy() end
 
--- Tạo GUI (Nhỏ gọn, kéo thả)
+-- Tạo GUI (Nhỏ gọn, kéo thả được)
 local ScreenGui = Instance.new("ScreenGui")
 ScreenGui.Name = "FarmScriptGUI"
 ScreenGui.Parent = CoreGui
@@ -35,17 +35,24 @@ ToggleButton.TextColor3 = Color3.fromRGB(255, 255, 255)
 ToggleButton.Text = "Bật Farm"
 Instance.new("UICorner", ToggleButton).CornerRadius = UDim.new(0, 6)
 
--- Logic kéo thả
+-- Logic Kéo thả
 local dragging, dragStart, startPos
 MainFrame.InputBegan:Connect(function(input)
-    if input.UserInputType == Enum.UserInputType.MouseButton1 then dragging = true; dragStart = input.Position; startPos = MainFrame.Position end
+    if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+        dragging = true; dragStart = input.Position; startPos = MainFrame.Position
+    end
 end)
 UserInputService.InputChanged:Connect(function(input)
-    if dragging then local delta = input.Position - dragStart; MainFrame.Position = UDim2.new(startPos.X.Scale, startPos.X.Offset + delta.X, startPos.Y.Scale, startPos.Y.Offset + delta.Y) end
+    if dragging and (input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch) then
+        local delta = input.Position - dragStart
+        MainFrame.Position = UDim2.new(startPos.X.Scale, startPos.X.Offset + delta.X, startPos.Y.Scale, startPos.Y.Offset + delta.Y)
+    end
 end)
-UserInputService.InputEnded:Connect(function(input) if input.UserInputType == Enum.UserInputType.MouseButton1 then dragging = false end end)
+UserInputService.InputEnded:Connect(function(input)
+    if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then dragging = false end
+end)
 
--- Waypoints
+-- Danh sách waypoint
 local waypoints = {
     Vector3.new(101.6, 249.5, -550.8), Vector3.new(101.6, 249.5, -464.4), Vector3.new(85.1, 249.5, -451.3),
     Vector3.new(63.8, 251.6, -423.8), Vector3.new(72.4, 249.6, -426.2), Vector3.new(57.7, 251.5, -411.5),
@@ -70,41 +77,57 @@ local waypoints = {
 
 local farmRunning = false
 
--- Logic Core
+-- Logic chạy
 getgenv().FarmThread = task.spawn(function()
     while true do
         task.wait(0.5)
         if farmRunning then
             local char = player.Character
-            if char and char:FindFirstChild("Humanoid") and char:FindFirstChild("HumanoidRootPart") then
-                for _, v in ipairs(workspace:GetDescendants()) do if v:IsA("ProximityPrompt") then v.HoldDuration = 0 end end
-                
-                local rootPart = char.HumanoidRootPart
+            if char and char:FindFirstChild("HumanoidRootPart") then
+                -- Tìm điểm gần nhất
+                local root = char.HumanoidRootPart
+                local minD = math.huge
                 local i = 1
+                for idx, pos in pairs(waypoints) do
+                    local d = (Vector2.new(pos.X, pos.Z) - Vector2.new(root.Position.X, root.Position.Z)).Magnitude
+                    if d < minD then minD = d; i = idx end
+                end
+
+                -- Chạy vòng lặp từ điểm gần nhất
                 while farmRunning and i <= #waypoints do
                     StatusLabel.Text = i .. "/" .. #waypoints
                     local target = waypoints[i]
                     
-                    -- Luôn luôn dùng Y của nhân vật để không bị kẹt cao độ
-                    char.Humanoid:MoveTo(Vector3.new(target.X, rootPart.Position.Y, target.Z))
+                    -- Instant prompt
+                    for _, v in pairs(workspace:GetDescendants()) do if v:IsA("ProximityPrompt") then v.HoldDuration = 0 end end
                     
-                    -- Chờ cho đến khi MoveTo hoàn thành (tối đa 5s để tránh kẹt)
-                    char.Humanoid.MoveToFinished:Wait(5) 
+                    -- Di chuyển (bỏ qua Y)
+                    char.Humanoid:MoveTo(Vector3.new(target.X, root.Position.Y, target.Z))
+                    
+                    -- Chờ đến nơi (check XZ) hoặc quá 5 giây (chống kẹt)
+                    local startTick = tick()
+                    while farmRunning and (Vector2.new(root.Position.X, root.Position.Z) - Vector2.new(target.X, target.Z)).Magnitude > 3 do
+                        if tick() - startTick > 5 then break end -- Kẹt thì nhảy
+                        task.wait(0.2)
+                    end
                     
                     -- Interact
-                    for _, v in ipairs(workspace:GetDescendants()) do
-                        if v:IsA("ProximityPrompt") and (v.Parent:IsA("BasePart") or v.Parent:IsA("Model")) then
-                            local pos = v.Parent:IsA("BasePart") and v.Parent.Position or v.Parent.PrimaryPart.Position
-                            if (pos - rootPart.Position).Magnitude <= 7 then pcall(function() fireproximityprompt(v) end) end
+                    for _, v in pairs(workspace:GetDescendants()) do
+                        if v:IsA("ProximityPrompt") and v:FindFirstAncestorOfClass("Model") then
+                            local pos = v:FindFirstAncestorOfClass("Model"):GetPivot().Position
+                            if (Vector2.new(pos.X, pos.Z) - Vector2.new(root.Position.X, root.Position.Z)).Magnitude <= 7 then
+                                pcall(function() fireproximityprompt(v) end)
+                            end
                         end
                     end
                     
-                    -- Equip Tool
+                    -- Equip
                     local tool = player.Backpack:FindFirstChildOfClass("Tool") or char:FindFirstChildOfClass("Tool")
                     if tool and string.find(string.lower(tool.Name), "patient") then char.Humanoid:EquipTool(tool); tool:Activate() end
                     
                     i = i + 1
                     if i > #waypoints then i = 1 end
+                    task.wait(0.1)
                 end
             end
         end
@@ -115,4 +138,5 @@ ToggleButton.MouseButton1Click:Connect(function()
     farmRunning = not farmRunning
     ToggleButton.Text = farmRunning and "Tắt Farm" or "Bật Farm"
     ToggleButton.BackgroundColor3 = farmRunning and Color3.fromRGB(50, 200, 50) or Color3.fromRGB(200, 50, 50)
+    StatusLabel.Text = farmRunning and "Đang chạy" or "Đang tắt"
 end)
